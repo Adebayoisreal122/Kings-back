@@ -7,13 +7,6 @@ const r = Router();
 const sign = (u) => jwt.sign({ id: u._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 const pub = (u) => ({ id: u._id, name: u.name, email: u.email, phone: u.phone, role: u.role, branch: u.branch?._id ?? u.branch, branchName: u.branch?.name });
 
-r.post('/register', async (req, res) => {
-  const d = z.object({ name: z.string().min(2), email: z.string().email(), phone: z.string().optional(), password: z.string().min(8) }).safeParse(req.body);
-  if (!d.success) return res.status(400).json({ message: 'Check your details and try again' });
-  if (await User.findOne({ email: d.data.email.toLowerCase() })) return res.status(409).json({ message: 'Email already registered' });
-  const user = await User.create({ ...d.data, role: 'customer' }); // customers only; staff are created by admin
-  res.status(201).json({ token: sign(user), user: pub(user) });
-});
 r.post('/login', async (req, res) => {
   const user = await User.findOne({ email: String(req.body.email || '').toLowerCase() }).select('+password').populate('branch', 'name');
   if (!user || !(await user.matches(req.body.password || ''))) return res.status(401).json({ message: 'Wrong email or password' });

@@ -1,4 +1,5 @@
 import RateRule from '../models/RateRule.js';
+import StayDiscount from '../models/StayDiscount.js';
 // Price a stay night by night, applying any active rate rules (seasonal / weekend).
 export async function priceStay(roomType, checkIn, checkOut) {
   const rules = await RateRule.find({
@@ -16,5 +17,12 @@ export async function priceStay(roomType, checkIn, checkOut) {
     }
     subtotal += Math.max(0, price); nights++;
   }
-  return { subtotal, nights };
+  // Long-stay discount: the best matching rule wins
+  const found = await StayDiscount.find({
+    active: true, minNights: { $lte: nights },
+    $and: [{ $or: [{ branch: null }, { branch: roomType.branch }] }, { $or: [{ roomType: null }, { roomType: roomType._id }] }],
+  }).sort('-percent').limit(1);
+  const stayDiscountPercent = found[0]?.percent || 0;
+  const stayDiscount = Math.round((subtotal * stayDiscountPercent) / 100);
+  return { subtotal, nights, stayDiscount, stayDiscountPercent, net: subtotal - stayDiscount };
 }

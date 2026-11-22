@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import Booking, { STATUSES } from '../models/Booking.js';
 import Room from '../models/Room.js';
-import RoomType from '../models/RoomType.js';
 import { protect, allow } from '../middleware/auth.js';
-import { notifyUser } from '../utils/socket.js';
+import { freeRooms } from '../utils/availability.js';
+import { sendSms, naira } from '../utils/sms.js';
 import { bookingsCsv } from '../utils/report.js';
 const r = Router();
 r.use(protect, allow('branch_manager'));
@@ -12,14 +12,15 @@ const branchOf = (req) => req.user.branch;
 r.get('/bookings', async (req, res) => {
   const q = { branch: branchOf(req) };
   if (req.query.status) q.status = req.query.status;
-  res.json(await Booking.find(q).sort('-createdAt').populate('customer', 'name email phone').populate('roomType', 'name').populate('room', 'number'));
+  res.json(await Booking.find(q).sort('-createdAt').populate('roomType', 'name').populate('room', 'number'));
 });
 // Allowed moves keep the lodging flow honest.
 const NEXT = { pending: ['confirmed', 'cancelled'], confirmed: ['checked_in', 'cancelled'], checked_in: ['checked_out'] };
 r.patch('/bookings/:id/status', async (req, res) => {
   const { status, roomId } = req.body;
-  const b = await Booking.findOne({ _id: req.params.id, branch: branchOf(req) });
+  const b = await Booking.findOne({ _id: req.params.id, branch: branchOf(req) }).select('+accessToken').populate('branch', 'name phone');
   if (!b || !STATUSES.includes(status) || !NEXT[b.status]?.includes(status)) return res.status(400).json({ message: 'That status change is not allowed' });
+  if (status === 'confirmed' && (await freeRooms(b.roomType, b.checkIn, b.checkOut, b._id)) < 1) return res.status(409).json({ message: 'No room of this type is free for these dates any more' });
   if (status === 'checked_in') {
     const room = await Room.findOne({ _id: roomId, branch: branchOf(req), roomType: b.roomType });
     if (!room) return res.status(400).json({ message: 'Assign a room of the booked type' });
@@ -27,8 +28,13 @@ r.patch('/bookings/:id/status', async (req, res) => {
   }
   if (status === 'checked_out' && b.room) await Room.findByIdAndUpdate(b.room, { status: 'cleaning' });
   b.status = status; b.timeline.push({ status, by: req.user._id }); await b.save();
-  const copy = { confirmed: 'Your booking is confirmed', checked_in: 'Welcome! You are checked in', checked_out: 'Thanks for staying with us', cancelled: 'Your booking was cancelled' };
-  await notifyUser(b.customer, { title: copy[status], message: `Booking ${b.reference}`, link: `/dashboard/bookings/${b.reference}` });
+  const link = `${process.env.CLIENT_URL}/track?ref=${b.reference}&t=${b.accessToken}`;
+  const text = {
+    confirmed: `Kings Apartment: booking ${b.reference} is confirmed at ${b.branch.name}. ${b.paymentStatus === 'paid' ? 'Payment received, see you soon!' : `Please pay ${naira(b.total)} online: ${link}`}`,
+    cancelled: `Kings Apartment: booking ${b.reference} was cancelled. Call ${b.branch.phone || 'us'} if you have questions.`,
+    checked_out: `Thank you for staying with Kings Apartment! Tell us how it went: ${link}`,
+  }[status];
+  if (text) await sendSms(b.guest.phone, text);
   res.json(b);
 });
 r.get('/rooms', async (req, res) => res.json(await Room.find({ branch: branchOf(req) }).populate('roomType', 'name')));

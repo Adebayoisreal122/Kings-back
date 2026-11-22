@@ -1,0 +1,1 @@
+export const paystack = (path, opts = {}) => fetch(`https://api.paystack.co${path}`, { ...opts, headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' } }).then((x) => x.json());

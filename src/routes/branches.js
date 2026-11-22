@@ -4,6 +4,7 @@ import RoomType from '../models/RoomType.js';
 import Review from '../models/Review.js';
 import { freeRooms } from '../utils/availability.js';
 import { priceStay } from '../utils/pricing.js';
+import StayDiscount from '../models/StayDiscount.js';
 const r = Router();
 const ratings = async () => Object.fromEntries((await Review.aggregate([{ $match: { hidden: false } }, { $group: { _id: '$branch', avg: { $avg: '$rating' }, count: { $sum: 1 } } }])).map((x) => [String(x._id), { rating: Math.round(x.avg * 10) / 10, reviews: x.count }]));
 r.get('/', async (req, res) => {
@@ -13,6 +14,7 @@ r.get('/', async (req, res) => {
   const map = Object.fromEntries(mins.map((m) => [String(m._id), m.from]));
   res.json(branches.map((b) => ({ ...b, priceFrom: map[String(b._id)] ?? null, ...(rt[String(b._id)] || { rating: null, reviews: 0 }) })));
 });
+r.get('/discounts/stay', async (_req, res) => res.json(await StayDiscount.find({ active: true }).populate('branch', 'name').populate('roomType', 'name').sort('minNights').lean()));
 r.get('/featured/rooms', async (_req, res) => {
   const types = await RoomType.find().sort('-updatedAt').limit(30).populate('branch', 'name city active').lean();
   const live = types.filter((t) => t.branch?.active).sort((a, b) => (b.images?.length ? 1 : 0) - (a.images?.length ? 1 : 0)).slice(0, 6);

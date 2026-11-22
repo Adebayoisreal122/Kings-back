@@ -5,7 +5,7 @@ const schema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true },
   phone: String,
   password: { type: String, required: true, select: false },
-  role: { type: String, enum: ['customer', 'branch_manager', 'admin'], default: 'customer' },
+  role: { type: String, enum: ['branch_manager', 'admin'], default: 'branch_manager' },
   branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }, // managers only
   active: { type: Boolean, default: true },
 }, { timestamps: true });

@@ -5,6 +5,7 @@ import Room from '../models/Room.js';
 import RateRule from '../models/RateRule.js';
 import Coupon from '../models/Coupon.js';
 import Review from '../models/Review.js';
+import StayDiscount from '../models/StayDiscount.js';
 import Booking from '../models/Booking.js';
 import { protect, allow } from '../middleware/auth.js';
 import { bookingsCsv } from '../utils/report.js';
@@ -46,6 +47,16 @@ r.post('/rate-rules', async (req, res) => {
 });
 r.patch('/rate-rules/:id', async (req, res) => res.json(await RateRule.findByIdAndUpdate(req.params.id, { active: !!req.body.active }, { new: true })));
 r.delete('/rate-rules/:id', async (req, res) => { await RateRule.findByIdAndDelete(req.params.id); res.json({ ok: true }); });
+// Long-stay discounts
+const stay = z.object({ branch: z.string().nullable().optional(), roomType: z.string().nullable().optional(), name: z.string().min(2), minNights: z.number().int().min(2).max(365), percent: z.number().min(1).max(90) });
+r.get('/stay-discounts', async (_req, res) => res.json(await StayDiscount.find().populate('branch', 'name').populate('roomType', 'name').sort('minNights')));
+r.post('/stay-discounts', async (req, res) => {
+  const d = stay.safeParse(req.body);
+  if (!d.success) return bad(res, 'Check the number of nights and the percent');
+  res.status(201).json(await StayDiscount.create({ ...d.data, branch: d.data.branch || null, roomType: d.data.roomType || null }));
+});
+r.patch('/stay-discounts/:id', async (req, res) => res.json(await StayDiscount.findByIdAndUpdate(req.params.id, { active: !!req.body.active }, { new: true })));
+r.delete('/stay-discounts/:id', async (req, res) => { await StayDiscount.findByIdAndDelete(req.params.id); res.json({ ok: true }); });
 // Coupons
 const coupon = z.object({ code: z.string().min(3).max(20), type: z.enum(['percent', 'fixed']), value: z.number().min(1), minTotal: z.number().min(0).optional(), maxUses: z.number().int().min(0).optional(), branch: z.string().nullable().optional(), validFrom: z.string().optional(), validTo: z.string().optional() });
 r.get('/coupons', async (_req, res) => res.json(await Coupon.find().populate('branch', 'name').sort('-createdAt')));
@@ -59,7 +70,7 @@ r.post('/coupons', async (req, res) => {
 r.patch('/coupons/:id', async (req, res) => res.json(await Coupon.findByIdAndUpdate(req.params.id, { active: !!req.body.active }, { new: true })));
 r.delete('/coupons/:id', async (req, res) => { await Coupon.findByIdAndDelete(req.params.id); res.json({ ok: true }); });
 // Reviews moderation
-r.get('/reviews', async (_req, res) => res.json(await Review.find().sort('-createdAt').limit(200).populate('customer', 'name').populate('branch', 'name')));
+r.get('/reviews', async (_req, res) => res.json(await Review.find().sort('-createdAt').limit(200).populate('branch', 'name')));
 r.patch('/reviews/:id', async (req, res) => res.json(await Review.findByIdAndUpdate(req.params.id, { hidden: !!req.body.hidden }, { new: true })));
 // Export
 r.get('/reports/bookings.csv', async (req, res) => {

@@ -2,8 +2,10 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import webpush from 'web-push';
 import User from '../models/User.js';
+import Branch from '../models/Branch.js';
 import Notification from '../models/Notification.js';
 import PushSub from '../models/PushSub.js';
+import { sendSms } from './sms.js';
 let io, pushReady;
 export function initSocket(server) {
   io = new Server(server, { cors: { origin: process.env.CLIENT_URL, credentials: true } });
@@ -34,7 +36,14 @@ export async function notifyUser(userId, { title, message, link }) {
     webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, JSON.stringify({ title, body: message, url: link || '/' }))
       .catch((e) => ([404, 410].includes(e.statusCode) ? PushSub.deleteOne({ _id: s._id }) : null))));
 }
+// Alert a branch: in-app and web push for its managers and admins, plus an SMS to the branch manager's phone.
 export async function notifyBranch(branchId, payload) {
-  const people = await User.find({ $or: [{ role: 'branch_manager', branch: branchId }, { role: 'admin' }], active: true }, '_id');
-  await Promise.all(people.map((p) => notifyUser(p._id, payload)));
+  try {
+    const people = await User.find({ $or: [{ role: 'branch_manager', branch: branchId }, { role: 'admin' }], active: true }, '_id role phone');
+    await Promise.all(people.map((p) => notifyUser(p._id, payload)));
+    if (!payload.sms) return;
+    const phones = people.filter((p) => p.role === 'branch_manager' || process.env.NOTIFY_ADMIN_SMS === 'true').map((p) => p.phone).filter(Boolean);
+    if (!phones.length) { const b = await Branch.findById(branchId, 'phone'); if (b?.phone) phones.push(b.phone); } // fall back to the branch line
+    await Promise.all([...new Set(phones)].map((ph) => sendSms(ph, payload.sms)));
+  } catch (e) { console.error('notifyBranch', e); }
 }
