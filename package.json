@@ -6,7 +6,8 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "seed": "node src/seed.js",
-    "vapid": "npx web-push generate-vapid-keys"
+    "vapid": "npx web-push generate-vapid-keys",
+    "check:cloudinary": "node scripts/check-cloudinary.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

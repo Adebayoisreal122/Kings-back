@@ -18,11 +18,12 @@ r.get('/:reference', async (req, res) => {
   const b = await findGuestBooking(req.params.reference, proof(req));
   b ? res.json(await publicBooking(b)) : notFound(res);
 });
-// Printable check-in ticket (PDF) with a QR code staff can scan
+// Printable check-in ticket (PDF) with a QR code staff can scan. Only available once the booking is paid.
 r.get('/:reference/ticket.pdf', async (req, res) => {
   const b = await findGuestBooking(req.params.reference, proof(req));
   if (!b) return notFound(res);
   if (b.status === 'cancelled') return res.status(400).json({ message: 'This booking was cancelled, so there is no ticket' });
+  if (b.paymentStatus !== 'paid') return res.status(403).json({ message: 'Your check-in ticket is available once your payment is received. Please pay online first.' });
   const pdf = await buildTicket(b);
   res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="kings-apartment-ticket-${b.reference}.pdf"`, 'Cache-Control': 'private, no-store' }).send(pdf);
 });
